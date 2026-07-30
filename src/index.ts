@@ -98,6 +98,12 @@ app.use((err: Error, _req: Request, res: Response, next: NextFunction) => {
   });
 });
 
+if (!config.mcpAuthToken) {
+  console.warn(
+    "[warn] MCP_AUTH_TOKEN is not set: /mcp and /cron endpoints are UNAUTHENTICATED. Anyone who can reach this port has full Bugzilla access via the configured API key.",
+  );
+}
+
 cronJob.start();
 const httpServer = app.listen(config.port, () => {
   console.log(`bugzilla-mcp listening on port ${config.port}`);
