@@ -56,7 +56,7 @@ Copy `.env.example` to `.env` and fill in:
 | `BUGZILLA_BASE_URL` | yes | Bugzilla instance URL, e.g. `https://bugzilla.example.com` |
 | `BUGZILLA_API_KEY` | yes | API key from Bugzilla Preferences → API Keys |
 | `MCP_AUTH_TOKEN` | no | Bearer token protecting `/mcp` and `/cron/*` |
-| `CRON_SCHEDULE` | no | Cron expression (default `0 9 * * *` = daily 09:00 UTC) |
+| `CRON_SCHEDULE` | no | Cron expression, evaluated in UTC (default `0 9 * * *` = daily 09:00 UTC) |
 | `PORT` | no | Listen port (default 3000) |
 
 The API key is sent as the `X-BUGZILLA-API-KEY` header on every Bugzilla request.
@@ -75,8 +75,11 @@ docker compose up --build
 ```bash
 npm install
 npm run build
-npm start        # or: npm run dev
+npm run start:local   # loads .env via node --env-file; or: npm run dev
 ```
+
+`npm start` reads configuration from the process environment only (used in the
+Docker image); use `start:local` or `dev` to load a local `.env` file.
 
 ## Cron Job
 

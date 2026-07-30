@@ -1,3 +1,4 @@
+import { timingSafeEqual } from "node:crypto";
 import express, { NextFunction, Request, Response } from "express";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -24,8 +25,12 @@ function requireAuth(req: Request, res: Response, next: NextFunction): void {
     next();
     return;
   }
-  const header = req.headers.authorization;
-  if (header !== `Bearer ${config.mcpAuthToken}`) {
+  const header = req.headers.authorization ?? "";
+  const match = /^bearer\s+(.+)$/i.exec(header.trim());
+  const provided = Buffer.from(match?.[1] ?? "");
+  const expected = Buffer.from(config.mcpAuthToken);
+  const equal = provided.length === expected.length && timingSafeEqual(provided, expected);
+  if (!equal) {
     res.status(401).json({ error: "Unauthorized" });
     return;
   }
@@ -82,10 +87,18 @@ app.post("/cron/run", requireAuth, async (_req: Request, res: Response) => {
 });
 
 cronJob.start();
-app.listen(config.port, () => {
+const httpServer = app.listen(config.port, () => {
   console.log(`bugzilla-mcp listening on port ${config.port}`);
   console.log(`  MCP endpoint:  POST /mcp`);
   console.log(`  Health check:  GET  /health`);
   console.log(`  Cron status:   GET  /cron/status`);
   console.log(`  Cron trigger:  POST /cron/run`);
 });
+
+for (const signal of ["SIGTERM", "SIGINT"] as const) {
+  process.on(signal, () => {
+    console.log(`Received ${signal}, shutting down`);
+    cronJob.stop();
+    httpServer.close(() => process.exit(0));
+  });
+}

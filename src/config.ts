@@ -15,11 +15,15 @@ export function loadConfig(): Config {
   if (!bugzillaApiKey) {
     throw new Error("BUGZILLA_API_KEY environment variable is required");
   }
+  const port = Number(process.env.PORT ?? 3000);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    throw new Error(`Invalid PORT: ${process.env.PORT}`);
+  }
   return {
     bugzillaBaseUrl: bugzillaBaseUrl.replace(/\/+$/, ""),
     bugzillaApiKey,
     mcpAuthToken: process.env.MCP_AUTH_TOKEN,
     cronSchedule: process.env.CRON_SCHEDULE ?? "0 9 * * *",
-    port: Number(process.env.PORT ?? 3000),
+    port,
   };
 }

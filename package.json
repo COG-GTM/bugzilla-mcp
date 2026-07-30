@@ -7,7 +7,8 @@
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
-    "dev": "tsx src/index.ts",
+    "start:local": "node --env-file=.env dist/index.js",
+    "dev": "tsx --env-file=.env src/index.ts",
     "typecheck": "tsc --noEmit"
   },
   "engines": {

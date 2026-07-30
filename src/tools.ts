@@ -170,10 +170,9 @@ export function registerTools(server: McpServer, client: BugzillaClient): void {
 
   server.tool(
     "create_attachment",
-    "Attach a file to one or more bugs. Data must be base64-encoded.",
+    "Attach a file to a bug. Data must be base64-encoded.",
     {
       bug_id: z.string().describe("Bug ID or alias to attach to"),
-      ids: z.array(z.number().int()).optional().describe("Additional bug IDs to attach to"),
       data: z.string().describe("Base64-encoded file content"),
       file_name: z.string(),
       summary: z.string().describe("Short description of the attachment"),
@@ -192,7 +191,15 @@ export function registerTools(server: McpServer, client: BugzillaClient): void {
     {
       type: z.enum(["accessible", "enterable", "selectable"]).default("accessible"),
     },
-    async ({ type }) => run(() => client.get(`/product_${type}`)),
+    async ({ type }) =>
+      run(async () => {
+        const { ids } = (await client.get(`/product_${type}`)) as { ids: number[] };
+        if (ids.length === 0) return { products: [] };
+        return client.get("/product", {
+          ids,
+          include_fields: "id,name,description,is_active",
+        });
+      }),
   );
 
   server.tool(

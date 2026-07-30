@@ -6,6 +6,7 @@ export interface CronRunResult {
   ok: boolean;
   bugzillaVersion?: string;
   changedBugs?: { id: number; summary: string; status: string; last_change_time: string }[];
+  changedBugsTruncated?: boolean;
   error?: string;
 }
 
@@ -37,9 +38,13 @@ export class BugzillaCron {
     if (!cron.validate(this.schedule)) {
       throw new Error(`Invalid CRON_SCHEDULE: ${this.schedule}`);
     }
-    this.task = cron.schedule(this.schedule, () => {
-      void this.run();
-    });
+    this.task = cron.schedule(
+      this.schedule,
+      () => {
+        void this.run();
+      },
+      { timezone: "UTC" },
+    );
     console.log(`[cron] scheduled Bugzilla ping: ${this.schedule}`);
   }
 
@@ -59,13 +64,26 @@ export class BugzillaCron {
         bugzillaVersion: version.version,
       };
       if (this.lastRunTime) {
-        const search = (await this.client.get("/bug", {
-          last_change_time: this.lastRunTime.toISOString(),
-          include_fields: "id,summary,status,last_change_time",
-          limit: 100,
-        })) as BugSearchResponse;
-        result.changedBugs = search.bugs;
-        console.log(`[cron] ${search.bugs.length} bug(s) changed since last run`);
+        const limit = 100;
+        const since = this.lastRunTime.toISOString();
+        const bugs: BugSearchResponse["bugs"] = [];
+        let offset = 0;
+        for (;;) {
+          const search = (await this.client.get("/bug", {
+            last_change_time: since,
+            include_fields: "id,summary,status,last_change_time",
+            limit,
+            offset,
+          })) as BugSearchResponse;
+          bugs.push(...search.bugs);
+          if (search.bugs.length < limit || bugs.length >= 1000) {
+            result.changedBugsTruncated = search.bugs.length === limit;
+            break;
+          }
+          offset += limit;
+        }
+        result.changedBugs = bugs;
+        console.log(`[cron] ${bugs.length} bug(s) changed since last run`);
       }
       this.lastRun = result;
       this.lastRunTime = new Date(ranAt);
@@ -78,7 +96,6 @@ export class BugzillaCron {
       };
       console.error(`[cron] ping failed: ${result.error}`);
       this.lastRun = result;
-      this.lastRunTime = new Date(ranAt);
       return result;
     }
   }
