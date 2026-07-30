@@ -66,7 +66,8 @@ export class BugzillaClient {
         res.status,
       );
     }
-    const errBody = json as BugzillaErrorBody;
+    const errBody: BugzillaErrorBody =
+      typeof json === "object" && json !== null ? (json as BugzillaErrorBody) : {};
     if (!res.ok || errBody.error) {
       throw new BugzillaError(
         errBody.message ?? `Bugzilla request failed (HTTP ${res.status})`,

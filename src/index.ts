@@ -86,6 +86,18 @@ app.post("/cron/run", requireAuth, async (_req: Request, res: Response) => {
   res.status(result.ok ? 200 : 502).json(result);
 });
 
+app.use((err: Error, _req: Request, res: Response, next: NextFunction) => {
+  if (res.headersSent) {
+    next(err);
+    return;
+  }
+  res.status(400).json({
+    jsonrpc: "2.0",
+    error: { code: -32700, message: "Parse error" },
+    id: null,
+  });
+});
+
 cronJob.start();
 const httpServer = app.listen(config.port, () => {
   console.log(`bugzilla-mcp listening on port ${config.port}`);
@@ -100,6 +112,9 @@ for (const signal of ["SIGTERM", "SIGINT"] as const) {
     console.log(`Received ${signal}, shutting down`);
     cronJob.stop();
     httpServer.close(() => process.exit(0));
-    setTimeout(() => process.exit(1), 10_000).unref();
+    setTimeout(() => {
+      httpServer.closeAllConnections();
+      process.exit(0);
+    }, 10_000).unref();
   });
 }
