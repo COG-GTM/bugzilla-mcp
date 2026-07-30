@@ -1,0 +1,12 @@
+services:
+  bugzilla-mcp:
+    build: .
+    ports:
+      - "${PORT:-3000}:3000"
+    environment:
+      BUGZILLA_BASE_URL: ${BUGZILLA_BASE_URL}
+      BUGZILLA_API_KEY: ${BUGZILLA_API_KEY}
+      MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN:-}
+      CRON_SCHEDULE: ${CRON_SCHEDULE:-0 9 * * *}
+      PORT: 3000
+    restart: unless-stopped
