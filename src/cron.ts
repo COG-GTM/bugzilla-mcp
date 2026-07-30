@@ -28,6 +28,7 @@ export class BugzillaCron {
   private task: ScheduledTask | null = null;
   private lastRun: CronRunResult | null = null;
   private lastRunTime: Date | null = null;
+  private inFlight: Promise<CronRunResult> | null = null;
 
   constructor(
     private readonly client: BugzillaClient,
@@ -53,7 +54,15 @@ export class BugzillaCron {
     this.task = null;
   }
 
-  async run(): Promise<CronRunResult> {
+  run(): Promise<CronRunResult> {
+    if (this.inFlight) return this.inFlight;
+    this.inFlight = this.doRun().finally(() => {
+      this.inFlight = null;
+    });
+    return this.inFlight;
+  }
+
+  private async doRun(): Promise<CronRunResult> {
     const ranAt = new Date().toISOString();
     console.log(`[cron] pinging Bugzilla at ${ranAt}`);
     try {
@@ -65,6 +74,7 @@ export class BugzillaCron {
       };
       if (this.lastRunTime) {
         const limit = 100;
+        const maxBugs = 1000;
         const since = this.lastRunTime.toISOString();
         const bugs: BugSearchResponse["bugs"] = [];
         let offset = 0;
@@ -72,12 +82,17 @@ export class BugzillaCron {
           const search = (await this.client.get("/bug", {
             last_change_time: since,
             include_fields: "id,summary,status,last_change_time",
+            order: "bug_id",
             limit,
             offset,
           })) as BugSearchResponse;
           bugs.push(...search.bugs);
-          if (search.bugs.length < limit || bugs.length >= 1000) {
-            result.changedBugsTruncated = search.bugs.length === limit;
+          if (search.bugs.length < limit) {
+            result.changedBugsTruncated = false;
+            break;
+          }
+          if (bugs.length >= maxBugs) {
+            result.changedBugsTruncated = true;
             break;
           }
           offset += limit;

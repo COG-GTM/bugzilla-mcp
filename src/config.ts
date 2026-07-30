@@ -15,7 +15,8 @@ export function loadConfig(): Config {
   if (!bugzillaApiKey) {
     throw new Error("BUGZILLA_API_KEY environment variable is required");
   }
-  const port = Number(process.env.PORT ?? 3000);
+  const portEnv = process.env.PORT?.trim();
+  const port = portEnv ? Number(portEnv) : 3000;
   if (!Number.isInteger(port) || port < 1 || port > 65535) {
     throw new Error(`Invalid PORT: ${process.env.PORT}`);
   }

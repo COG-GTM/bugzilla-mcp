@@ -100,5 +100,6 @@ for (const signal of ["SIGTERM", "SIGINT"] as const) {
     console.log(`Received ${signal}, shutting down`);
     cronJob.stop();
     httpServer.close(() => process.exit(0));
+    setTimeout(() => process.exit(1), 10_000).unref();
   });
 }

@@ -46,13 +46,14 @@ export class BugzillaClient {
         }
       }
     }
+    const headers: Record<string, string> = {
+      "X-BUGZILLA-API-KEY": this.apiKey,
+      Accept: "application/json",
+    };
+    if (body !== undefined) headers["Content-Type"] = "application/json";
     const res = await fetch(url, {
       method,
-      headers: {
-        "X-BUGZILLA-API-KEY": this.apiKey,
-        "Content-Type": "application/json",
-        Accept: "application/json",
-      },
+      headers,
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     const text = await res.text();
