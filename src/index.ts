@@ -97,13 +97,24 @@ app.use(
       next(err);
       return;
     }
-    const status = err.status ?? err.statusCode ?? 500;
+    const rawStatus = err.status ?? err.statusCode;
+    const status =
+      typeof rawStatus === "number" && Number.isInteger(rawStatus) && rawStatus >= 400 && rawStatus < 600
+        ? rawStatus
+        : 500;
     const isParseError = err.type === "entity.parse.failed";
+    console.error("[http] request error:", err);
+    let message = "Internal server error";
+    if (isParseError) {
+      message = "Parse error";
+    } else if (status < 500) {
+      message = err.message || message;
+    }
     res.status(status).json({
       jsonrpc: "2.0",
       error: {
         code: isParseError ? -32700 : -32603,
-        message: isParseError ? "Parse error" : err.message || "Internal server error",
+        message,
       },
       id: null,
     });
