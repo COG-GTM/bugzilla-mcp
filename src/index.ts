@@ -110,12 +110,15 @@ app.use(
     } else if (status < 500) {
       message = err.message || message;
     }
+    let code = -32603;
+    if (isParseError) {
+      code = -32700;
+    } else if (status < 500) {
+      code = -32600;
+    }
     res.status(status).json({
       jsonrpc: "2.0",
-      error: {
-        code: isParseError ? -32700 : -32603,
-        message,
-      },
+      error: { code, message },
       id: null,
     });
   },
