@@ -47,8 +47,8 @@ app.post("/mcp", requireAuth, async (req: Request, res: Response) => {
     sessionIdGenerator: undefined,
   });
   res.on("close", () => {
-    void transport.close();
-    void server.close();
+    transport.close().catch((err) => console.error("[mcp] transport close error:", err));
+    server.close().catch((err) => console.error("[mcp] server close error:", err));
   });
   try {
     await server.connect(transport);
@@ -86,17 +86,29 @@ app.post("/cron/run", requireAuth, async (_req: Request, res: Response) => {
   res.status(result.ok ? 200 : 502).json(result);
 });
 
-app.use((err: Error, _req: Request, res: Response, next: NextFunction) => {
-  if (res.headersSent) {
-    next(err);
-    return;
-  }
-  res.status(400).json({
-    jsonrpc: "2.0",
-    error: { code: -32700, message: "Parse error" },
-    id: null,
-  });
-});
+app.use(
+  (
+    err: Error & { status?: number; statusCode?: number; type?: string },
+    _req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    if (res.headersSent) {
+      next(err);
+      return;
+    }
+    const status = err.status ?? err.statusCode ?? 500;
+    const isParseError = err.type === "entity.parse.failed";
+    res.status(status).json({
+      jsonrpc: "2.0",
+      error: {
+        code: isParseError ? -32700 : -32603,
+        message: isParseError ? "Parse error" : err.message || "Internal server error",
+      },
+      id: null,
+    });
+  },
+);
 
 if (!config.mcpAuthToken) {
   console.warn(
