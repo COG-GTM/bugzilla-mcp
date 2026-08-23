@@ -16,6 +16,21 @@ function errorResult(err: unknown) {
   };
 }
 
+const customFieldKeyPattern = /^cf_[A-Za-z0-9_]+$/;
+const customFieldsSchema = z
+  .record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.array(z.string())]))
+  .superRefine((customFields, ctx) => {
+    for (const key of Object.keys(customFields)) {
+      if (!customFieldKeyPattern.test(key)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `Invalid custom field key "${key}": must match /^cf_[A-Za-z0-9_]+$/`,
+          path: [key],
+        });
+      }
+    }
+  });
+
 async function run(fn: () => Promise<unknown>) {
   try {
     return jsonResult(await fn());
@@ -76,8 +91,10 @@ export function registerTools(server: McpServer, client: BugzillaClient): void {
       blocks: z.array(z.number().int()).optional(),
       depends_on: z.array(z.number().int()).optional(),
       keywords: z.array(z.string()).optional(),
+      custom_fields: customFieldsSchema.optional(),
     },
-    async (args) => run(() => client.post("/bug", args)),
+    async ({ custom_fields, ...args }) =>
+      run(() => client.post("/bug", { ...custom_fields, ...args })),
   );
 
   server.tool(
@@ -115,9 +132,15 @@ export function registerTools(server: McpServer, client: BugzillaClient): void {
           remove: z.array(z.string()).optional(),
         })
         .optional(),
+      custom_fields: customFieldsSchema.optional(),
     },
-    async ({ id_or_alias, ...rest }) =>
-      run(() => client.put(`/bug/${encodeURIComponent(id_or_alias)}`, rest)),
+    async ({ id_or_alias, custom_fields, ...rest }) =>
+      run(() =>
+        client.put(`/bug/${encodeURIComponent(id_or_alias)}`, {
+          ...custom_fields,
+          ...rest,
+        }),
+      ),
   );
 
   server.tool(

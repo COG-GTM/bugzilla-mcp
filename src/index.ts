@@ -11,6 +11,7 @@ const config = loadConfig();
 const client = new BugzillaClient({
   baseUrl: config.bugzillaBaseUrl,
   apiKey: config.bugzillaApiKey,
+  authStyle: config.bugzillaAuthStyle,
 });
 const cronJob = new BugzillaCron(client, config.cronSchedule);
 

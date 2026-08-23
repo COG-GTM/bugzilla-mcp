@@ -32,6 +32,9 @@ Targets the [Bugzilla 5.2 REST API](https://bugzilla.readthedocs.io/en/5.2/api/i
 | `create_component` | `POST /rest/component` |
 | `get_field_values` | `GET /rest/field/bug/(field)/values` |
 
+`create_bug` and `update_bug` accept an optional `custom_fields` object for
+Bugzilla custom fields, such as `custom_fields: {"cf_severity_class": "Sev4-Cosmetic"}`.
+
 Note: Bugzilla has no delete-bug API; closing/resolving is done via `update_bug`
 (e.g. `status=RESOLVED`, `resolution=FIXED`).
 
@@ -55,6 +58,7 @@ Copy `.env.example` to `.env` and fill in:
 | --- | --- | --- |
 | `BUGZILLA_BASE_URL` | yes | Bugzilla instance URL, e.g. `https://bugzilla.example.com` |
 | `BUGZILLA_API_KEY` | yes | API key from Bugzilla Preferences → API Keys |
+| `BUGZILLA_AUTH_STYLE` | no | `header` (default) sends the key as a header; set to `query` for Bugzilla 5.0.x, which ignores the header |
 | `MCP_AUTH_TOKEN` | no | Bearer token protecting `/mcp` and `/cron/*` |
 | `CRON_SCHEDULE` | no | Cron expression, evaluated in UTC (default `0 9 * * *` = daily 09:00 UTC) |
 | `PORT` | no | Listen port (default 3000) |
