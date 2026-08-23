@@ -68,6 +68,11 @@ Copy `.env.example` to `.env` and fill in:
 The API key is sent on every Bugzilla request as the `X-BUGZILLA-API-KEY` header,
 or as an `api_key` query parameter when `BUGZILLA_AUTH_STYLE=query`.
 
+`BUGZILLA_AUTH_STYLE=query` puts the key in the request URL, where intermediary
+proxy and access logs may record it. Bugzilla 5.0.x ignores the header and
+accepts no other authentication, so use `query` only for those instances, with a
+dedicated least-privilege service account and periodic key rotation.
+
 ## Running
 
 ### Docker (recommended)
