@@ -35,7 +35,9 @@ Targets the [Bugzilla 5.2 REST API](https://bugzilla.readthedocs.io/en/5.2/api/i
 `search_bugs`, `create_bug`, and `update_bug` accept an optional `custom_fields`
 object for Bugzilla custom fields, such as
 `custom_fields: {"cf_severity_class": "Sev1-Critical"}` when filtering or
-setting a mandatory field.
+setting a mandatory field. Per Bugzilla's REST contract, an array value for a
+multi-select custom field replaces the field's whole value — unlike `keywords`
+and `cc`, custom fields have no incremental `{add, remove}` form.
 
 Note: Bugzilla has no delete-bug API; closing/resolving is done via `update_bug`
 (e.g. `status=RESOLVED`, `resolution=FIXED`).
