@@ -63,7 +63,8 @@ Copy `.env.example` to `.env` and fill in:
 | `CRON_SCHEDULE` | no | Cron expression, evaluated in UTC (default `0 9 * * *` = daily 09:00 UTC) |
 | `PORT` | no | Listen port (default 3000) |
 
-The API key is sent as the `X-BUGZILLA-API-KEY` header on every Bugzilla request.
+The API key is sent on every Bugzilla request as the `X-BUGZILLA-API-KEY` header,
+or as an `api_key` query parameter when `BUGZILLA_AUTH_STYLE=query`.
 
 ## Running
 
