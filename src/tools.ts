@@ -17,8 +17,12 @@ function errorResult(err: unknown) {
 }
 
 const customFieldKeyPattern = /^cf_[A-Za-z0-9_]+$/;
+const customFieldScalarSchema = z.union([z.string(), z.number(), z.boolean()]);
 export const customFieldsSchema = z
-  .record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.array(z.string())]))
+  .record(
+    z.string(),
+    z.union([customFieldScalarSchema, z.array(customFieldScalarSchema)]),
+  )
   .superRefine((customFields, ctx) => {
     for (const key of Object.keys(customFields)) {
       if (!customFieldKeyPattern.test(key)) {

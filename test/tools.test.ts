@@ -8,7 +8,7 @@ test("custom fields accept supported values and reject invalid keys", () => {
     cf_severity_class: "Sev1-Critical",
     cf_impact_score: 4,
     cf_customer_visible: true,
-    cf_related_values: ["one", "two"],
+    cf_related_values: ["one", 2, true],
   });
   assert.equal(valid.success, true);
 
