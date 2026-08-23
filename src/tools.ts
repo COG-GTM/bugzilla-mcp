@@ -17,7 +17,7 @@ function errorResult(err: unknown) {
 }
 
 const customFieldKeyPattern = /^cf_[A-Za-z0-9_]+$/;
-const customFieldsSchema = z
+export const customFieldsSchema = z
   .record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.array(z.string())]))
   .superRefine((customFields, ctx) => {
     for (const key of Object.keys(customFields)) {
@@ -30,6 +30,13 @@ const customFieldsSchema = z
       }
     }
   });
+
+export function mergeCustomFields(
+  customFields: Record<string, unknown> | undefined,
+  fields: Record<string, unknown>,
+): Record<string, unknown> {
+  return { ...customFields, ...fields };
+}
 
 async function run(fn: () => Promise<unknown>) {
   try {
@@ -59,8 +66,10 @@ export function registerTools(server: McpServer, client: BugzillaClient): void {
         .describe("ISO 8601 datetime; bugs changed at/after this time"),
       limit: z.number().int().positive().max(100).default(20),
       offset: z.number().int().min(0).default(0),
+      custom_fields: customFieldsSchema.optional(),
     },
-    async (args) => run(() => client.get("/bug", args)),
+    async ({ custom_fields, ...args }) =>
+      run(() => client.get("/bug", mergeCustomFields(custom_fields, args))),
   );
 
   server.tool(
@@ -94,7 +103,7 @@ export function registerTools(server: McpServer, client: BugzillaClient): void {
       custom_fields: customFieldsSchema.optional(),
     },
     async ({ custom_fields, ...args }) =>
-      run(() => client.post("/bug", { ...custom_fields, ...args })),
+      run(() => client.post("/bug", mergeCustomFields(custom_fields, args))),
   );
 
   server.tool(
@@ -136,10 +145,10 @@ export function registerTools(server: McpServer, client: BugzillaClient): void {
     },
     async ({ id_or_alias, custom_fields, ...rest }) =>
       run(() =>
-        client.put(`/bug/${encodeURIComponent(id_or_alias)}`, {
-          ...custom_fields,
-          ...rest,
-        }),
+        client.put(
+          `/bug/${encodeURIComponent(id_or_alias)}`,
+          mergeCustomFields(custom_fields, rest),
+        ),
       ),
   );
 

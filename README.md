@@ -32,8 +32,10 @@ Targets the [Bugzilla 5.2 REST API](https://bugzilla.readthedocs.io/en/5.2/api/i
 | `create_component` | `POST /rest/component` |
 | `get_field_values` | `GET /rest/field/bug/(field)/values` |
 
-`create_bug` and `update_bug` accept an optional `custom_fields` object for
-Bugzilla custom fields, such as `custom_fields: {"cf_severity_class": "Sev4-Cosmetic"}`.
+`search_bugs`, `create_bug`, and `update_bug` accept an optional `custom_fields`
+object for Bugzilla custom fields, such as
+`custom_fields: {"cf_severity_class": "Sev1-Critical"}` when filtering or
+setting a mandatory field.
 
 Note: Bugzilla has no delete-bug API; closing/resolving is done via `update_bug`
 (e.g. `status=RESOLVED`, `resolution=FIXED`).
