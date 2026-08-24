@@ -57,6 +57,9 @@ export class BugzillaClient {
       body: body === undefined ? undefined : JSON.stringify(body),
     });
     const text = await res.text();
+    if (res.ok && text.trim() === "") {
+      return {};
+    }
     let json: unknown;
     try {
       json = JSON.parse(text);
