@@ -1,4 +1,4 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer, ToolCallback } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { BugzillaClient } from "./bugzilla.js";
 
@@ -42,6 +42,20 @@ export function mergeCustomFields(
   return { ...customFields, ...fields };
 }
 
+export function strictInputSchema<Shape extends z.ZodRawShape>(shape: Shape) {
+  return z.object(shape).strict();
+}
+
+function strictTool<Shape extends z.ZodRawShape>(
+  server: McpServer,
+  name: string,
+  description: string,
+  shape: Shape,
+  cb: ToolCallback<ReturnType<typeof strictInputSchema<Shape>>>,
+): void {
+  server.registerTool(name, { description, inputSchema: strictInputSchema(shape) }, cb);
+}
+
 async function run(fn: () => Promise<unknown>) {
   try {
     return jsonResult(await fn());
@@ -51,7 +65,8 @@ async function run(fn: () => Promise<unknown>) {
 }
 
 export function registerTools(server: McpServer, client: BugzillaClient): void {
-  server.tool(
+  strictTool(
+    server,
     "search_bugs",
     "Search for bugs in Bugzilla. All parameters are optional filters.",
     {
@@ -76,7 +91,8 @@ export function registerTools(server: McpServer, client: BugzillaClient): void {
       run(() => client.get("/bug", mergeCustomFields(custom_fields, args))),
   );
 
-  server.tool(
+  strictTool(
+    server,
     "get_bug",
     "Get a bug by ID or alias.",
     {
@@ -85,7 +101,8 @@ export function registerTools(server: McpServer, client: BugzillaClient): void {
     async ({ id_or_alias }) => run(() => client.get(`/bug/${encodeURIComponent(id_or_alias)}`)),
   );
 
-  server.tool(
+  strictTool(
+    server,
     "create_bug",
     "Create a new bug (ticket).",
     {
@@ -110,7 +127,8 @@ export function registerTools(server: McpServer, client: BugzillaClient): void {
       run(() => client.post("/bug", mergeCustomFields(custom_fields, args))),
   );
 
-  server.tool(
+  strictTool(
+    server,
     "update_bug",
     "Update an existing bug: change status, resolution, assignee, and other fields. Closing a bug is done here (e.g. status=RESOLVED, resolution=FIXED).",
     {
@@ -156,7 +174,8 @@ export function registerTools(server: McpServer, client: BugzillaClient): void {
       ),
   );
 
-  server.tool(
+  strictTool(
+    server,
     "get_bug_history",
     "Get the change history of a bug.",
     {
@@ -167,7 +186,8 @@ export function registerTools(server: McpServer, client: BugzillaClient): void {
       run(() => client.get(`/bug/${encodeURIComponent(id)}/history`, { new_since })),
   );
 
-  server.tool(
+  strictTool(
+    server,
     "get_comments",
     "Get all comments on a bug.",
     {
@@ -178,7 +198,8 @@ export function registerTools(server: McpServer, client: BugzillaClient): void {
       run(() => client.get(`/bug/${encodeURIComponent(id_or_alias)}/comment`, { new_since })),
   );
 
-  server.tool(
+  strictTool(
+    server,
     "add_comment",
     "Add a comment to a bug.",
     {
@@ -190,7 +211,8 @@ export function registerTools(server: McpServer, client: BugzillaClient): void {
       run(() => client.post(`/bug/${encodeURIComponent(id)}/comment`, { comment, is_private })),
   );
 
-  server.tool(
+  strictTool(
+    server,
     "list_attachments",
     "List attachments on a bug (metadata only, without file data).",
     {
@@ -204,7 +226,8 @@ export function registerTools(server: McpServer, client: BugzillaClient): void {
       ),
   );
 
-  server.tool(
+  strictTool(
+    server,
     "create_attachment",
     "Attach a file to a bug. Data must be base64-encoded.",
     {
@@ -221,7 +244,8 @@ export function registerTools(server: McpServer, client: BugzillaClient): void {
       run(() => client.post(`/bug/${encodeURIComponent(bug_id)}/attachment`, rest)),
   );
 
-  server.tool(
+  strictTool(
+    server,
     "list_products",
     "List products (projects). type selects which set: accessible (default), enterable (can file bugs), or selectable (can search).",
     {
@@ -238,7 +262,8 @@ export function registerTools(server: McpServer, client: BugzillaClient): void {
       }),
   );
 
-  server.tool(
+  strictTool(
+    server,
     "get_product",
     "Get a product (project) by ID or name, including its components, versions, and milestones.",
     {
@@ -247,7 +272,8 @@ export function registerTools(server: McpServer, client: BugzillaClient): void {
     async ({ id_or_name }) => run(() => client.get(`/product/${encodeURIComponent(id_or_name)}`)),
   );
 
-  server.tool(
+  strictTool(
+    server,
     "create_product",
     "Create a new product (project). Requires admin privileges.",
     {
@@ -263,7 +289,8 @@ export function registerTools(server: McpServer, client: BugzillaClient): void {
     async (args) => run(() => client.post("/product", args)),
   );
 
-  server.tool(
+  strictTool(
+    server,
     "update_product",
     "Update an existing product (project). Requires admin privileges.",
     {
@@ -278,7 +305,8 @@ export function registerTools(server: McpServer, client: BugzillaClient): void {
       run(() => client.put(`/product/${encodeURIComponent(id_or_name)}`, rest)),
   );
 
-  server.tool(
+  strictTool(
+    server,
     "create_component",
     "Create a new component within a product. Requires admin privileges.",
     {
@@ -293,7 +321,8 @@ export function registerTools(server: McpServer, client: BugzillaClient): void {
     async (args) => run(() => client.post("/component", args)),
   );
 
-  server.tool(
+  strictTool(
+    server,
     "get_field_values",
     "Get the legal (valid) values for a bug field, e.g. status, priority, severity, resolution.",
     {

@@ -1,7 +1,37 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { BugzillaClient } from "../src/bugzilla.ts";
-import { customFieldsSchema, mergeCustomFields } from "../src/tools.ts";
+import { z } from "zod";
+import {
+  customFieldsSchema,
+  mergeCustomFields,
+  strictInputSchema,
+} from "../src/tools.ts";
+
+test("strict input schemas reject unknown argument keys", () => {
+  const schema = strictInputSchema({
+    id_or_alias: z.string(),
+    cc: z.object({ add: z.array(z.string()).optional() }).optional(),
+  });
+
+  const valid = schema.safeParse({
+    id_or_alias: "16",
+    cc: { add: ["bob.qa@corp.example"] },
+  });
+  assert.equal(valid.success, true);
+
+  const invalid = schema.safeParse({
+    id_or_alias: "16",
+    cc_add: ["bob.qa@corp.example"],
+  });
+  assert.equal(invalid.success, false);
+  if (!invalid.success) {
+    assert.match(
+      invalid.error.issues[0]?.message ?? "",
+      /Unrecognized key\(s\) in object: 'cc_add'/,
+    );
+  }
+});
 
 test("custom fields accept supported values and reject invalid keys", () => {
   const valid = customFieldsSchema.safeParse({
