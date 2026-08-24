@@ -114,7 +114,9 @@ export class BugzillaCron {
       const search = (await this.client.get("/bug", {
         ...params,
         include_fields: "id,summary,status,creation_time,last_change_time",
-        order: "bug_id",
+        // Oldest changes first, so a truncated result set holds the oldest
+        // changes and the watermark can safely advance past them.
+        order: "changeddate,bug_id",
         limit,
         offset,
       })) as BugSearchResponse;
