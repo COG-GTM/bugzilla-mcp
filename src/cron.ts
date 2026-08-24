@@ -148,7 +148,8 @@ export class BugzillaCron {
         const newBugs = bugs.filter(
           (bug) => bug.creation_time && new Date(bug.creation_time).getTime() >= sinceMs,
         );
-        const changedBugs = bugs.filter((bug) => !newBugs.includes(bug));
+        const newBugIds = new Set(newBugs.map((bug) => bug.id));
+        const changedBugs = bugs.filter((bug) => !newBugIds.has(bug.id));
         result.newBugs = newBugs;
         result.changedBugs = changedBugs;
         result.changedBugsTruncated = truncated;
@@ -168,10 +169,15 @@ export class BugzillaCron {
       }
       this.lastRun = result;
       // Advance the watermark only when delivery succeeded (or was not needed),
-      // so failed webhook deliveries are retried on the next run.
+      // so failed webhook deliveries are retried on the next run. When the
+      // search was truncated, advance only to the latest fetched change so the
+      // un-fetched bugs are picked up on the next run.
       if (deliveryOk) {
-        this.lastRunTime = new Date(ranAt);
-        this.state.save({ lastRunTime: ranAt });
+        const watermark = result.changedBugsTruncated
+          ? this.maxLastChangeTime(result) ?? ranAt
+          : ranAt;
+        this.lastRunTime = new Date(watermark);
+        this.state.save({ lastRunTime: this.lastRunTime.toISOString() });
       }
       return result;
     } catch (err) {
@@ -184,6 +190,16 @@ export class BugzillaCron {
       this.lastRun = result;
       return result;
     }
+  }
+
+  private maxLastChangeTime(result: CronRunResult): string | null {
+    let max: string | null = null;
+    for (const bug of [...(result.newBugs ?? []), ...(result.changedBugs ?? [])]) {
+      if (bug.last_change_time && (!max || bug.last_change_time > max)) {
+        max = bug.last_change_time;
+      }
+    }
+    return max;
   }
 
   status(): CronStatus {

@@ -103,7 +103,15 @@ app.post("/cron/run", requireAuth, async (_req: Request, res: Response) => {
   res.status(result.ok ? 200 : 502).json(result);
 });
 
-registerSettingsRoutes(app, requireAuth, cronJob, webhook, state, config.bugzillaBaseUrl);
+registerSettingsRoutes(
+  app,
+  requireAuth,
+  cronJob,
+  webhook,
+  state,
+  config.bugzillaBaseUrl,
+  !!config.mcpAuthToken,
+);
 
 app.use((err: Error, _req: Request, res: Response, next: NextFunction) => {
   if (res.headersSent) {

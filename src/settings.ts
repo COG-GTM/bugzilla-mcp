@@ -120,7 +120,22 @@ export function registerSettingsRoutes(
   webhook: WebhookSender,
   state: StateStore,
   instanceUrl: string,
+  authConfigured: boolean,
 ): void {
+  const requireConfiguredAuth = (
+    _req: Request,
+    res: Response,
+    next: NextFunction,
+  ): void => {
+    if (!authConfigured) {
+      res.status(403).json({
+        error: "Settings changes are disabled because MCP_AUTH_TOKEN is not set",
+      });
+      return;
+    }
+    next();
+  };
+
   app.get("/settings", (_req: Request, res: Response) => {
     res.type("html").send(SETTINGS_PAGE);
   });
@@ -135,7 +150,7 @@ export function registerSettingsRoutes(
     });
   });
 
-  app.put("/settings/config", requireAuth, (req: Request, res: Response) => {
+  app.put("/settings/config", requireConfiguredAuth, requireAuth, (req: Request, res: Response) => {
     const body: unknown = req.body;
     if (!body || typeof body !== "object") {
       res.status(400).json({ error: "JSON object body required" });
@@ -190,7 +205,7 @@ export function registerSettingsRoutes(
     res.json({ ok: true });
   });
 
-  app.post("/settings/test-webhook", requireAuth, async (_req: Request, res: Response) => {
+  app.post("/settings/test-webhook", requireConfiguredAuth, requireAuth, async (_req: Request, res: Response) => {
     if (!webhook.enabled) {
       res.status(400).json({ delivered: false, error: "Webhook is not enabled or has no URL" });
       return;
