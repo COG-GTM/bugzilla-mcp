@@ -5,6 +5,9 @@ export interface Config {
   mcpAuthToken: string | undefined;
   cronSchedule: string;
   port: number;
+  webhookUrl: string | undefined;
+  webhookSecret: string | undefined;
+  stateFile: string;
 }
 
 export function loadConfig(): Config {
@@ -34,5 +37,8 @@ export function loadConfig(): Config {
     mcpAuthToken: process.env.MCP_AUTH_TOKEN,
     cronSchedule: process.env.CRON_SCHEDULE ?? "0 9 * * *",
     port,
+    webhookUrl: process.env.WEBHOOK_URL?.trim() || undefined,
+    webhookSecret: process.env.WEBHOOK_SECRET || undefined,
+    stateFile: process.env.STATE_FILE?.trim() || ".bugzilla-mcp-state.json",
   };
 }

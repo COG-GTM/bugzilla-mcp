@@ -6,6 +6,9 @@ import { loadConfig } from "./config.js";
 import { BugzillaClient } from "./bugzilla.js";
 import { registerTools } from "./tools.js";
 import { BugzillaCron } from "./cron.js";
+import { StateStore } from "./state.js";
+import { WebhookSender } from "./webhook.js";
+import { registerSettingsRoutes } from "./settings.js";
 
 const config = loadConfig();
 const client = new BugzillaClient({
@@ -13,7 +16,20 @@ const client = new BugzillaClient({
   apiKey: config.bugzillaApiKey,
   authStyle: config.bugzillaAuthStyle,
 });
-const cronJob = new BugzillaCron(client, config.cronSchedule);
+const state = new StateStore(config.stateFile);
+const persisted = state.load();
+const webhook = new WebhookSender({
+  url: persisted.webhookUrl ?? config.webhookUrl,
+  secret: persisted.webhookSecret ?? config.webhookSecret,
+  enabled: persisted.webhookEnabled ?? !!(persisted.webhookUrl ?? config.webhookUrl),
+});
+const cronJob = new BugzillaCron(
+  client,
+  persisted.cronSchedule ?? config.cronSchedule,
+  config.bugzillaBaseUrl,
+  webhook,
+  state,
+);
 
 function buildMcpServer(): McpServer {
   const server = new McpServer({ name: "bugzilla-mcp", version: "0.1.0" });
@@ -87,6 +103,8 @@ app.post("/cron/run", requireAuth, async (_req: Request, res: Response) => {
   res.status(result.ok ? 200 : 502).json(result);
 });
 
+registerSettingsRoutes(app, requireAuth, cronJob, webhook, state, config.bugzillaBaseUrl);
+
 app.use((err: Error, _req: Request, res: Response, next: NextFunction) => {
   if (res.headersSent) {
     next(err);
@@ -112,6 +130,7 @@ const httpServer = app.listen(config.port, () => {
   console.log(`  Health check:  GET  /health`);
   console.log(`  Cron status:   GET  /cron/status`);
   console.log(`  Cron trigger:  POST /cron/run`);
+  console.log(`  Settings UI:   GET  /settings`);
 });
 
 for (const signal of ["SIGTERM", "SIGINT"] as const) {

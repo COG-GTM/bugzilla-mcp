@@ -1,12 +1,19 @@
 import cron, { ScheduledTask } from "node-cron";
 import { BugzillaClient } from "./bugzilla.js";
+import { StateStore } from "./state.js";
+import { WebhookBug, WebhookDeliveryStatus, WebhookSender } from "./webhook.js";
 
 export interface CronRunResult {
   ranAt: string;
   ok: boolean;
   bugzillaVersion?: string;
-  changedBugs?: { id: number; summary: string; status: string; last_change_time: string }[];
+  newBugs?: WebhookBug[];
+  changedBugs?: WebhookBug[];
   changedBugsTruncated?: boolean;
+  webhook?: {
+    created: WebhookDeliveryStatus | null;
+    changed: WebhookDeliveryStatus | null;
+  };
   error?: string;
 }
 
@@ -14,6 +21,12 @@ export interface CronStatus {
   schedule: string;
   running: boolean;
   lastRun: CronRunResult | null;
+  webhook: {
+    enabled: boolean;
+    url?: string;
+    secretSet: boolean;
+    lastDelivery: WebhookDeliveryStatus | null;
+  };
 }
 
 interface VersionResponse {
@@ -21,7 +34,7 @@ interface VersionResponse {
 }
 
 interface BugSearchResponse {
-  bugs: { id: number; summary: string; status: string; last_change_time: string }[];
+  bugs: WebhookBug[];
 }
 
 export class BugzillaCron {
@@ -29,11 +42,22 @@ export class BugzillaCron {
   private lastRun: CronRunResult | null = null;
   private lastRunTime: Date | null = null;
   private inFlight: Promise<CronRunResult> | null = null;
+  private schedule: string;
 
   constructor(
     private readonly client: BugzillaClient,
-    private readonly schedule: string,
-  ) {}
+    schedule: string,
+    private readonly instanceUrl: string,
+    private readonly webhook: WebhookSender,
+    private readonly state: StateStore,
+  ) {
+    this.schedule = schedule;
+    const persisted = this.state.load();
+    if (persisted.lastRunTime) {
+      const parsed = new Date(persisted.lastRunTime);
+      if (!Number.isNaN(parsed.getTime())) this.lastRunTime = parsed;
+    }
+  }
 
   start(): void {
     if (!cron.validate(this.schedule)) {
@@ -54,12 +78,55 @@ export class BugzillaCron {
     this.task = null;
   }
 
+  setSchedule(schedule: string): void {
+    if (!cron.validate(schedule)) {
+      throw new Error(`Invalid cron schedule: ${schedule}`);
+    }
+    this.schedule = schedule;
+    if (this.task) {
+      this.stop();
+      this.start();
+    }
+  }
+
+  getSchedule(): string {
+    return this.schedule;
+  }
+
   run(): Promise<CronRunResult> {
     if (this.inFlight) return this.inFlight;
     this.inFlight = this.doRun().finally(() => {
       this.inFlight = null;
     });
     return this.inFlight;
+  }
+
+  private async searchBugs(params: Record<string, unknown>): Promise<{
+    bugs: WebhookBug[];
+    truncated: boolean;
+  }> {
+    const limit = 100;
+    const maxBugs = 1000;
+    const bugs: WebhookBug[] = [];
+    let truncated = false;
+    let offset = 0;
+    for (;;) {
+      const search = (await this.client.get("/bug", {
+        ...params,
+        include_fields: "id,summary,status,creation_time,last_change_time",
+        order: "bug_id",
+        limit,
+        offset,
+      })) as BugSearchResponse;
+      bugs.push(...search.bugs);
+      if (search.bugs.length < limit) break;
+      if (bugs.length >= maxBugs) {
+        truncated = true;
+        break;
+      }
+      offset += limit;
+    }
+    return { bugs, truncated };
   }
 
   private async doRun(): Promise<CronRunResult> {
@@ -72,36 +139,40 @@ export class BugzillaCron {
         ok: true,
         bugzillaVersion: version.version,
       };
+      let deliveryOk = true;
       if (this.lastRunTime) {
-        const limit = 100;
-        const maxBugs = 1000;
-        const since = this.lastRunTime.toISOString();
-        const bugs: BugSearchResponse["bugs"] = [];
-        let offset = 0;
-        for (;;) {
-          const search = (await this.client.get("/bug", {
-            last_change_time: since,
-            include_fields: "id,summary,status,last_change_time",
-            order: "bug_id",
-            limit,
-            offset,
-          })) as BugSearchResponse;
-          bugs.push(...search.bugs);
-          if (search.bugs.length < limit) {
-            result.changedBugsTruncated = false;
-            break;
-          }
-          if (bugs.length >= maxBugs) {
-            result.changedBugsTruncated = true;
-            break;
-          }
-          offset += limit;
+        const sinceMs = this.lastRunTime.getTime();
+        const { bugs, truncated } = await this.searchBugs({
+          last_change_time: this.lastRunTime.toISOString(),
+        });
+        const newBugs = bugs.filter(
+          (bug) => bug.creation_time && new Date(bug.creation_time).getTime() >= sinceMs,
+        );
+        const changedBugs = bugs.filter((bug) => !newBugs.includes(bug));
+        result.newBugs = newBugs;
+        result.changedBugs = changedBugs;
+        result.changedBugsTruncated = truncated;
+        console.log(
+          `[cron] since last run: ${newBugs.length} new bug(s), ${changedBugs.length} changed bug(s)`,
+        );
+        if (this.webhook.enabled) {
+          const created = newBugs.length
+            ? await this.webhook.send("bug.created", this.instanceUrl, newBugs)
+            : null;
+          const changed = changedBugs.length
+            ? await this.webhook.send("bug.changed", this.instanceUrl, changedBugs)
+            : null;
+          result.webhook = { created, changed };
+          deliveryOk = (created?.ok ?? true) && (changed?.ok ?? true);
         }
-        result.changedBugs = bugs;
-        console.log(`[cron] ${bugs.length} bug(s) changed since last run`);
       }
       this.lastRun = result;
-      this.lastRunTime = new Date(ranAt);
+      // Advance the watermark only when delivery succeeded (or was not needed),
+      // so failed webhook deliveries are retried on the next run.
+      if (deliveryOk) {
+        this.lastRunTime = new Date(ranAt);
+        this.state.save({ lastRunTime: ranAt });
+      }
       return result;
     } catch (err) {
       const result: CronRunResult = {
@@ -120,6 +191,12 @@ export class BugzillaCron {
       schedule: this.schedule,
       running: this.task !== null,
       lastRun: this.lastRun,
+      webhook: {
+        enabled: this.webhook.enabled,
+        url: this.webhook.url,
+        secretSet: this.webhook.secretSet,
+        lastDelivery: this.webhook.lastDelivery,
+      },
     };
   }
 }
