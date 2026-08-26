@@ -14,6 +14,46 @@ Targets the [Bugzilla 5.2 REST API](https://bugzilla.readthedocs.io/en/5.2/api/i
 - **Settings page** at `GET /settings` for configuring the cron schedule and webhook from the browser
 - **Dockerized** (multi-stage build, non-root user, docker-compose)
 
+## Quick Start
+
+Requires Node.js 20+ and network access to your Bugzilla instance.
+
+```bash
+git clone https://github.com/COG-GTM/bugzilla-mcp
+cd bugzilla-mcp
+npm install
+npm run build
+cp .env.example .env
+```
+
+Edit `.env`:
+
+```dotenv
+BUGZILLA_BASE_URL=https://your-bugzilla.example.com/
+BUGZILLA_API_KEY=<key from Bugzilla Preferences -> API Keys>
+# Only for Bugzilla 5.0.x, which ignores the auth header (default: header):
+BUGZILLA_AUTH_STYLE=query
+# Any random string of your choosing, e.g. `openssl rand -hex 32`:
+MCP_AUTH_TOKEN=<random token>
+```
+
+Then start it:
+
+```bash
+npm run start:local
+```
+
+- MCP clients connect to `http://<host>:3000/mcp` with header
+  `Authorization: Bearer <MCP_AUTH_TOKEN>`.
+- The settings page is at `http://<host>:3000/settings` (enter the same token).
+- Cron/webhook settings persist in `.bugzilla-mcp-state.json` next to the app
+  (override the path with `STATE_FILE`).
+
+For production: use a dedicated least-privilege Bugzilla service account for
+the API key, always set `MCP_AUTH_TOKEN` (settings writes are refused without
+it), and terminate TLS in front of the server if it is reachable beyond
+localhost.
+
 ## MCP Tools
 
 | Tool | Bugzilla endpoint |
@@ -164,7 +204,8 @@ identity — group-restricted bugs the account cannot read are never delivered.
 
 `GET /settings` serves a plain-HTML page (no build step, no framework) to:
 
-- view and edit the cron schedule (validated cron expression, applied live),
+- view and edit the polling interval in minutes (converted to a cron
+  expression and applied live),
 - set the webhook URL, secret (write-only — never displayed back), and
   enabled flag,
 - trigger **Run now** and **Send test event**,
