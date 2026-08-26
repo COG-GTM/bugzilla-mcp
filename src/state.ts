@@ -3,6 +3,7 @@ import path from "node:path";
 
 export interface PersistedState {
   lastRunTime?: string;
+  creationCutoffTime?: string;
   cronSchedule?: string;
   webhookUrl?: string;
   webhookSecret?: string;

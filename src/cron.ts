@@ -41,6 +41,11 @@ export class BugzillaCron {
   private task: ScheduledTask | null = null;
   private lastRun: CronRunResult | null = null;
   private lastRunTime: Date | null = null;
+  // Bugs created at/after this cutoff are announced as bug.created. Advances
+  // only on non-truncated runs, so a new bug left in the un-fetched tail of a
+  // truncated poll is still announced as created (not changed) when a later
+  // run picks it up.
+  private creationCutoff: Date | null = null;
   private inFlight: Promise<CronRunResult> | null = null;
   private schedule: string;
 
@@ -57,6 +62,11 @@ export class BugzillaCron {
       const parsed = new Date(persisted.lastRunTime);
       if (!Number.isNaN(parsed.getTime())) this.lastRunTime = parsed;
     }
+    if (persisted.creationCutoffTime) {
+      const parsed = new Date(persisted.creationCutoffTime);
+      if (!Number.isNaN(parsed.getTime())) this.creationCutoff = parsed;
+    }
+    if (!this.creationCutoff) this.creationCutoff = this.lastRunTime;
   }
 
   start(): void {
@@ -145,7 +155,7 @@ export class BugzillaCron {
       };
       let deliveryOk = true;
       if (this.lastRunTime) {
-        const sinceMs = this.lastRunTime.getTime();
+        const sinceMs = (this.creationCutoff ?? this.lastRunTime).getTime();
         const { bugs, truncated } = await this.searchBugs({
           last_change_time: this.lastRunTime.toISOString(),
         });
@@ -181,10 +191,16 @@ export class BugzillaCron {
           ? this.maxLastChangeTime(result) ?? ranAt
           : ranAt;
         this.lastRunTime = new Date(watermark);
+        if (!result.changedBugsTruncated) {
+          this.creationCutoff = new Date(ranAt);
+        }
         // Persistence failures must not fail an otherwise-successful run; the
         // watermark still advances in memory and is re-saved on the next run.
         try {
-          this.state.save({ lastRunTime: this.lastRunTime.toISOString() });
+          this.state.save({
+            lastRunTime: this.lastRunTime.toISOString(),
+            creationCutoffTime: this.creationCutoff?.toISOString(),
+          });
         } catch (err) {
           console.error(
             `[cron] failed to persist watermark: ${err instanceof Error ? err.message : String(err)}`,
