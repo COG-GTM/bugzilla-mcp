@@ -115,7 +115,9 @@ export class BugzillaCron {
         ...params,
         include_fields: "id,summary,status,creation_time,last_change_time",
         // Oldest changes first, so a truncated result set holds the oldest
-        // changes and the watermark can safely advance past them.
+        // changes and the watermark can advance past them. Concurrent edits
+        // during a truncated (>1000-result) run can shift offsets between
+        // pages, so a bug may occasionally be missed in that edge case.
         order: "changeddate,bug_id",
         limit,
         offset,

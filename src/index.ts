@@ -18,10 +18,14 @@ const client = new BugzillaClient({
 });
 const state = new StateStore(config.stateFile);
 const persisted = state.load();
+// A persisted empty string means the value was explicitly cleared via the
+// settings page and must keep overriding the environment variable.
+const webhookUrl = (persisted.webhookUrl ?? config.webhookUrl) || undefined;
+const webhookSecret = (persisted.webhookSecret ?? config.webhookSecret) || undefined;
 const webhook = new WebhookSender({
-  url: persisted.webhookUrl ?? config.webhookUrl,
-  secret: persisted.webhookSecret ?? config.webhookSecret,
-  enabled: persisted.webhookEnabled ?? !!(persisted.webhookUrl ?? config.webhookUrl),
+  url: webhookUrl,
+  secret: webhookSecret,
+  enabled: persisted.webhookEnabled ?? !!webhookUrl,
 });
 const cronJob = new BugzillaCron(
   client,

@@ -204,10 +204,10 @@ export function registerSettingsRoutes(
     });
     state.save({
       ...(cronSchedule !== undefined ? { cronSchedule: cronSchedule as string } : {}),
-      ...(webhookUrl !== undefined ? { webhookUrl: (webhookUrl as string) || undefined } : {}),
-      ...(webhookSecret !== undefined
-        ? { webhookSecret: (webhookSecret as string) || undefined }
-        : {}),
+      // Persist empty strings so a cleared value keeps overriding the
+      // environment variable after a restart.
+      ...(webhookUrl !== undefined ? { webhookUrl: webhookUrl as string } : {}),
+      ...(webhookSecret !== undefined ? { webhookSecret: webhookSecret as string } : {}),
       ...(webhookEnabled !== undefined ? { webhookEnabled: webhookEnabled as boolean } : {}),
     });
     res.json({ ok: true });
