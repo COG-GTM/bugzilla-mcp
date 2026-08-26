@@ -32,7 +32,10 @@ export class StateStore {
       if (next[key] === undefined) delete next[key];
     }
     fs.mkdirSync(path.dirname(path.resolve(this.filePath)), { recursive: true });
-    fs.writeFileSync(this.filePath, JSON.stringify(next, null, 2) + "\n", { mode: 0o600 });
+    // Write-then-rename so a crash mid-write cannot leave a truncated file.
+    const tmp = `${this.filePath}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(next, null, 2) + "\n", { mode: 0o600 });
+    fs.renameSync(tmp, this.filePath);
     return next;
   }
 }
