@@ -32,8 +32,8 @@ pre { background: #f4f4f4; padding: 0.5rem; overflow-x: auto; }
 </fieldset>
 <fieldset>
 <legend>Cron</legend>
-<label for="schedule">Schedule (cron expression, UTC)</label>
-<input type="text" id="schedule">
+<label for="interval">Poll every (minutes)</label>
+<input type="number" id="interval" min="1" max="59" step="1">
 <button id="save-cron">Save schedule</button>
 <button id="run-now">Run now</button>
 <div class="msg" id="cronmsg"></div>
@@ -69,9 +69,13 @@ function show(id, text, ok) {
   el.textContent = text;
   el.className = "msg " + (ok ? "ok" : "err");
 }
+function cronToMinutes(schedule) {
+  const m = /^\\*\\/(\\d+) \\* \\* \\* \\*$/.exec(schedule);
+  return m ? m[1] : "";
+}
 async function refresh() {
   const cfg = await api("GET", "/settings/config");
-  $("schedule").value = cfg.cronSchedule;
+  $("interval").value = cronToMinutes(cfg.cronSchedule);
   $("url").value = cfg.webhookUrl || "";
   $("enabled").checked = !!cfg.webhookEnabled;
   $("status").textContent = JSON.stringify(cfg.status, null, 2);
@@ -82,7 +86,11 @@ $("load").onclick = async () => {
 };
 $("save-cron").onclick = async () => {
   try {
-    await api("PUT", "/settings/config", { cronSchedule: $("schedule").value });
+    const minutes = parseInt($("interval").value, 10);
+    if (!Number.isInteger(minutes) || minutes < 1 || minutes > 59) {
+      throw new Error("Enter a whole number of minutes between 1 and 59");
+    }
+    await api("PUT", "/settings/config", { cronSchedule: "*/" + minutes + " * * * *" });
     await refresh(); show("cronmsg", "Schedule saved.", true);
   } catch (e) { show("cronmsg", e.message, false); }
 };
