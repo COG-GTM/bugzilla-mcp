@@ -19,7 +19,8 @@ export interface CronRunResult {
 
 export interface CronStatus {
   schedule: string;
-  running: boolean;
+  scheduled: boolean;
+  runInProgress: boolean;
   lastRun: CronRunResult | null;
   webhook: {
     enabled: boolean;
@@ -233,7 +234,8 @@ export class BugzillaCron {
   status(): CronStatus {
     return {
       schedule: this.schedule,
-      running: this.task !== null,
+      scheduled: this.task !== null,
+      runInProgress: this.inFlight !== null,
       lastRun: this.lastRun,
       webhook: {
         enabled: this.webhook.enabled,

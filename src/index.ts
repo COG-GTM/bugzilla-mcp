@@ -68,8 +68,8 @@ app.post("/mcp", requireAuth, async (req: Request, res: Response) => {
     sessionIdGenerator: undefined,
   });
   res.on("close", () => {
-    void transport.close();
-    void server.close();
+    transport.close().catch((err) => console.error("[mcp] transport close error:", err));
+    server.close().catch((err) => console.error("[mcp] server close error:", err));
   });
   try {
     await server.connect(transport);
@@ -117,17 +117,43 @@ registerSettingsRoutes(
   !!config.mcpAuthToken,
 );
 
-app.use((err: Error, _req: Request, res: Response, next: NextFunction) => {
-  if (res.headersSent) {
-    next(err);
-    return;
-  }
-  res.status(400).json({
-    jsonrpc: "2.0",
-    error: { code: -32700, message: "Parse error" },
-    id: null,
-  });
-});
+app.use(
+  (
+    err: Error & { status?: number; statusCode?: number; type?: string },
+    _req: Request,
+    res: Response,
+    next: NextFunction,
+  ) => {
+    if (res.headersSent) {
+      next(err);
+      return;
+    }
+    const rawStatus = err.status ?? err.statusCode;
+    const status =
+      typeof rawStatus === "number" && Number.isInteger(rawStatus) && rawStatus >= 400 && rawStatus < 600
+        ? rawStatus
+        : 500;
+    const isParseError = err.type === "entity.parse.failed";
+    console.error("[http] request error:", err);
+    let message = "Internal server error";
+    if (isParseError) {
+      message = "Parse error";
+    } else if (status < 500) {
+      message = err.message || message;
+    }
+    let code = -32603;
+    if (isParseError) {
+      code = -32700;
+    } else if (status < 500) {
+      code = -32600;
+    }
+    res.status(status).json({
+      jsonrpc: "2.0",
+      error: { code, message },
+      id: null,
+    });
+  },
+);
 
 if (!config.mcpAuthToken) {
   console.warn(
