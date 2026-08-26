@@ -179,7 +179,15 @@ export class BugzillaCron {
           ? this.maxLastChangeTime(result) ?? ranAt
           : ranAt;
         this.lastRunTime = new Date(watermark);
-        this.state.save({ lastRunTime: this.lastRunTime.toISOString() });
+        // Persistence failures must not fail an otherwise-successful run; the
+        // watermark still advances in memory and is re-saved on the next run.
+        try {
+          this.state.save({ lastRunTime: this.lastRunTime.toISOString() });
+        } catch (err) {
+          console.error(
+            `[cron] failed to persist watermark: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
       }
       return result;
     } catch (err) {
