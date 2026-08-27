@@ -6,7 +6,15 @@ services:
     environment:
       BUGZILLA_BASE_URL: ${BUGZILLA_BASE_URL}
       BUGZILLA_API_KEY: ${BUGZILLA_API_KEY}
+      BUGZILLA_AUTH_STYLE: ${BUGZILLA_AUTH_STYLE:-header}
       MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN:-}
       CRON_SCHEDULE: ${CRON_SCHEDULE:-0 9 * * *}
+      WEBHOOK_URL: ${WEBHOOK_URL:-}
+      WEBHOOK_SECRET: ${WEBHOOK_SECRET:-}
       PORT: 3000
+    volumes:
+      - bugzilla-mcp-state:/app/data
     restart: unless-stopped
+
+volumes:
+  bugzilla-mcp-state:

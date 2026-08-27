@@ -1,6 +1,7 @@
 export interface BugzillaClientOptions {
   baseUrl: string;
   apiKey: string;
+  authStyle?: "header" | "query";
 }
 
 export class BugzillaError extends Error {
@@ -23,10 +24,12 @@ interface BugzillaErrorBody {
 export class BugzillaClient {
   private readonly baseUrl: string;
   private readonly apiKey: string;
+  private readonly authStyle: "header" | "query";
 
   constructor(options: BugzillaClientOptions) {
     this.baseUrl = options.baseUrl.replace(/\/+$/, "");
     this.apiKey = options.apiKey;
+    this.authStyle = options.authStyle ?? "header";
   }
 
   private async request(
@@ -46,10 +49,12 @@ export class BugzillaClient {
         }
       }
     }
-    const headers: Record<string, string> = {
-      "X-BUGZILLA-API-KEY": this.apiKey,
-      Accept: "application/json",
-    };
+    const headers: Record<string, string> = { Accept: "application/json" };
+    if (this.authStyle === "header") {
+      headers["X-BUGZILLA-API-KEY"] = this.apiKey;
+    } else {
+      url.searchParams.set("api_key", this.apiKey);
+    }
     if (body !== undefined) headers["Content-Type"] = "application/json";
     const res = await fetch(url, {
       method,

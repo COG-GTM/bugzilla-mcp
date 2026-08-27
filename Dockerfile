@@ -12,6 +12,8 @@ ENV NODE_ENV=production
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY package.json ./
+RUN mkdir /app/data && chown node:node /app/data
+ENV STATE_FILE=/app/data/bugzilla-mcp-state.json
 USER node
 EXPOSE 3000
 CMD ["node", "dist/index.js"]

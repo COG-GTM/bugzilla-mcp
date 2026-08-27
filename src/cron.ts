@@ -1,12 +1,19 @@
 import cron, { ScheduledTask } from "node-cron";
 import { BugzillaClient } from "./bugzilla.js";
+import { StateStore } from "./state.js";
+import { WebhookBug, WebhookDeliveryStatus, WebhookSender } from "./webhook.js";
 
 export interface CronRunResult {
   ranAt: string;
   ok: boolean;
   bugzillaVersion?: string;
-  changedBugs?: { id: number; summary: string; status: string; last_change_time: string }[];
+  newBugs?: WebhookBug[];
+  changedBugs?: WebhookBug[];
   changedBugsTruncated?: boolean;
+  webhook?: {
+    created: WebhookDeliveryStatus | null;
+    changed: WebhookDeliveryStatus | null;
+  };
   error?: string;
 }
 
@@ -15,6 +22,12 @@ export interface CronStatus {
   scheduled: boolean;
   runInProgress: boolean;
   lastRun: CronRunResult | null;
+  webhook: {
+    enabled: boolean;
+    url?: string;
+    secretSet: boolean;
+    lastDelivery: WebhookDeliveryStatus | null;
+  };
 }
 
 interface VersionResponse {
@@ -22,19 +35,40 @@ interface VersionResponse {
 }
 
 interface BugSearchResponse {
-  bugs: { id: number; summary: string; status: string; last_change_time: string }[];
+  bugs: WebhookBug[];
 }
 
 export class BugzillaCron {
   private task: ScheduledTask | null = null;
   private lastRun: CronRunResult | null = null;
   private lastRunTime: Date | null = null;
+  // Bugs created at/after this cutoff are announced as bug.created. Advances
+  // only on non-truncated runs, so a new bug left in the un-fetched tail of a
+  // truncated poll is still announced as created (not changed) when a later
+  // run picks it up.
+  private creationCutoff: Date | null = null;
   private inFlight: Promise<CronRunResult> | null = null;
+  private schedule: string;
 
   constructor(
     private readonly client: BugzillaClient,
-    private readonly schedule: string,
-  ) {}
+    schedule: string,
+    private readonly instanceUrl: string,
+    private readonly webhook: WebhookSender,
+    private readonly state: StateStore,
+  ) {
+    this.schedule = schedule;
+    const persisted = this.state.load();
+    if (persisted.lastRunTime) {
+      const parsed = new Date(persisted.lastRunTime);
+      if (!Number.isNaN(parsed.getTime())) this.lastRunTime = parsed;
+    }
+    if (persisted.creationCutoffTime) {
+      const parsed = new Date(persisted.creationCutoffTime);
+      if (!Number.isNaN(parsed.getTime())) this.creationCutoff = parsed;
+    }
+    if (!this.creationCutoff) this.creationCutoff = this.lastRunTime;
+  }
 
   start(): void {
     if (!cron.validate(this.schedule)) {
@@ -55,12 +89,59 @@ export class BugzillaCron {
     this.task = null;
   }
 
+  setSchedule(schedule: string): void {
+    if (!cron.validate(schedule)) {
+      throw new Error(`Invalid cron schedule: ${schedule}`);
+    }
+    this.schedule = schedule;
+    if (this.task) {
+      this.stop();
+      this.start();
+    }
+  }
+
+  getSchedule(): string {
+    return this.schedule;
+  }
+
   run(): Promise<CronRunResult> {
     if (this.inFlight) return this.inFlight;
     this.inFlight = this.doRun().finally(() => {
       this.inFlight = null;
     });
     return this.inFlight;
+  }
+
+  private async searchBugs(params: Record<string, unknown>): Promise<{
+    bugs: WebhookBug[];
+    truncated: boolean;
+  }> {
+    const limit = 100;
+    const maxBugs = 1000;
+    const bugs: WebhookBug[] = [];
+    let truncated = false;
+    let offset = 0;
+    for (;;) {
+      const search = (await this.client.get("/bug", {
+        ...params,
+        include_fields: "id,summary,status,creation_time,last_change_time",
+        // Oldest changes first, so a truncated result set holds the oldest
+        // changes and the watermark can advance past them. Concurrent edits
+        // during a truncated (>1000-result) run can shift offsets between
+        // pages, so a bug may occasionally be missed in that edge case.
+        order: "changeddate,bug_id",
+        limit,
+        offset,
+      })) as BugSearchResponse;
+      bugs.push(...search.bugs);
+      if (search.bugs.length < limit) break;
+      if (bugs.length >= maxBugs) {
+        truncated = true;
+        break;
+      }
+      offset += limit;
+    }
+    return { bugs, truncated };
   }
 
   private async doRun(): Promise<CronRunResult> {
@@ -73,36 +154,60 @@ export class BugzillaCron {
         ok: true,
         bugzillaVersion: version.version,
       };
+      let deliveryOk = true;
       if (this.lastRunTime) {
-        const limit = 100;
-        const maxBugs = 1000;
-        const since = this.lastRunTime.toISOString();
-        const bugs: BugSearchResponse["bugs"] = [];
-        let offset = 0;
-        for (;;) {
-          const search = (await this.client.get("/bug", {
-            last_change_time: since,
-            include_fields: "id,summary,status,last_change_time",
-            order: "bug_id",
-            limit,
-            offset,
-          })) as BugSearchResponse;
-          bugs.push(...search.bugs);
-          if (search.bugs.length < limit) {
-            result.changedBugsTruncated = false;
-            break;
-          }
-          if (bugs.length >= maxBugs) {
-            result.changedBugsTruncated = true;
-            break;
-          }
-          offset += limit;
+        const sinceMs = (this.creationCutoff ?? this.lastRunTime).getTime();
+        const { bugs, truncated } = await this.searchBugs({
+          last_change_time: this.lastRunTime.toISOString(),
+        });
+        const newBugs = bugs.filter(
+          (bug) => bug.creation_time && new Date(bug.creation_time).getTime() >= sinceMs,
+        );
+        const newBugIds = new Set(newBugs.map((bug) => bug.id));
+        const changedBugs = bugs.filter((bug) => !newBugIds.has(bug.id));
+        result.newBugs = newBugs;
+        result.changedBugs = changedBugs;
+        result.changedBugsTruncated = truncated;
+        console.log(
+          `[cron] since last run: ${newBugs.length} new bug(s), ${changedBugs.length} changed bug(s)`,
+        );
+        if (this.webhook.enabled) {
+          const created = newBugs.length
+            ? await this.webhook.send("bug.created", this.instanceUrl, newBugs)
+            : null;
+          const changed = changedBugs.length
+            ? await this.webhook.send("bug.changed", this.instanceUrl, changedBugs)
+            : null;
+          result.webhook = { created, changed };
+          deliveryOk = (created?.ok ?? true) && (changed?.ok ?? true);
         }
-        result.changedBugs = bugs;
-        console.log(`[cron] ${bugs.length} bug(s) changed since last run`);
       }
       this.lastRun = result;
-      this.lastRunTime = new Date(ranAt);
+      // Advance the watermark only when delivery succeeded (or was not needed),
+      // so failed webhook deliveries are retried on the next run. When the
+      // search was truncated, advance only to the latest fetched change so the
+      // un-fetched bugs are picked up on the next run.
+      if (deliveryOk) {
+        const watermark = result.changedBugsTruncated
+          ? this.maxLastChangeTime(result) ?? ranAt
+          : ranAt;
+        this.lastRunTime = new Date(watermark);
+        if (!result.changedBugsTruncated) {
+          this.creationCutoff = new Date(ranAt);
+        }
+        // Persistence failures must not fail an otherwise-successful run; the
+        // watermark still advances in memory and is re-saved on the next run.
+        try {
+          this.state.save({
+            lastRunTime: this.lastRunTime.toISOString(),
+            creationCutoffTime: this.creationCutoff?.toISOString(),
+          });
+        } catch (err) {
+          console.error(
+            `[cron] failed to persist watermark: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
       return result;
     } catch (err) {
       const result: CronRunResult = {
@@ -116,12 +221,28 @@ export class BugzillaCron {
     }
   }
 
+  private maxLastChangeTime(result: CronRunResult): string | null {
+    let max: string | null = null;
+    for (const bug of [...(result.newBugs ?? []), ...(result.changedBugs ?? [])]) {
+      if (bug.last_change_time && (!max || bug.last_change_time > max)) {
+        max = bug.last_change_time;
+      }
+    }
+    return max;
+  }
+
   status(): CronStatus {
     return {
       schedule: this.schedule,
       scheduled: this.task !== null,
       runInProgress: this.inFlight !== null,
       lastRun: this.lastRun,
+      webhook: {
+        enabled: this.webhook.enabled,
+        url: this.webhook.url,
+        secretSet: this.webhook.secretSet,
+        lastDelivery: this.webhook.lastDelivery,
+      },
     };
   }
 }
