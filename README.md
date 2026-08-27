@@ -236,13 +236,21 @@ To let Devin use this server as an MCP integration:
    - `BUGZILLA_AUTH_STYLE=query` if the instance is Bugzilla 5.0.x.
    - `MCP_AUTH_TOKEN` — a random secret (e.g. `openssl rand -hex 32`);
      required so only Devin can reach the server.
-3. **Add the MCP server in Devin.** In the Devin web app go to
-   **Settings → MCP Marketplace** and click **Add a custom MCP** (requires
-   the org-admin "Manage MCP Servers" permission; see the
-   [Devin MCP docs](https://docs.devin.ai/work-with-devin/mcp)). Enter:
+3. **Add the MCP server in Devin.** Org admins can add it via
+   **Settings → MCP Marketplace → Add a custom MCP** (see the
+   [Devin MCP docs](https://docs.devin.ai/work-with-devin/mcp)); enterprise
+   admins can instead configure it once for multiple organizations via
+   **Settings → Enterprise → Connections → Server catalog**, shown below.
+   Either way, enter:
    - **Transport**: HTTP (Streamable HTTP; this server does not support stdio)
-   - **Server URL**: `https://<your-host>/mcp`
-   - **Headers**: `Authorization: Bearer <MCP_AUTH_TOKEN>`
+   - **URL**: `https://<your-host>/mcp`
+   - **Authentication / custom headers**:
+     `Authorization: Bearer <MCP_AUTH_TOKEN>` (values are write-only —
+     re-enter every header when changing them)
+   - Leave **Enable in sessions** on, and (enterprise catalog only) pick
+     which organizations receive the server under **Targeting**.
+
+   ![Devin enterprise MCP server configuration page](docs/devin-mcp-setup.png)
 4. **Verify.** Ask Devin to list the Bugzilla tools or run a quick
    `search_bugs` call. All 15 tools (search/create/update bugs, comments,
    attachments, history, custom fields) should be available.
