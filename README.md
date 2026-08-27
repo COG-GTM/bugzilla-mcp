@@ -218,3 +218,48 @@ rejects every call. Changes persist to `STATE_FILE` (written mode 0600).
 
 Point any Streamable-HTTP-capable MCP client at `http://<host>:3000/mcp`, with
 header `Authorization: Bearer <MCP_AUTH_TOKEN>` if configured.
+
+## Setting Up with Devin
+
+To let Devin use this server as an MCP integration:
+
+1. **Deploy the server somewhere Devin can reach it.** Devin runs in the
+   cloud, so `localhost` on your laptop will not work — host it on a server
+   with a public (or VPN/allowlisted) HTTPS URL. Use the Docker setup above
+   or `npm run start:local` behind a TLS-terminating reverse proxy.
+2. **Configure the server** with your Bugzilla credentials:
+   - `BUGZILLA_BASE_URL` — your Bugzilla instance URL.
+   - `BUGZILLA_API_KEY` — an API key for a **dedicated least-privilege
+     service account** (Bugzilla → Preferences → API Keys). Devin will act
+     as this account for every read and write, and bug history will
+     attribute changes to it.
+   - `BUGZILLA_AUTH_STYLE=query` if the instance is Bugzilla 5.0.x.
+   - `MCP_AUTH_TOKEN` — a random secret (e.g. `openssl rand -hex 32`);
+     required so only Devin can reach the server.
+3. **Add the MCP server in Devin.** Org admins can add it via
+   **Settings → MCP Marketplace → Add a custom MCP** (see the
+   [Devin MCP docs](https://docs.devin.ai/work-with-devin/mcp)); enterprise
+   admins can instead configure it once for multiple organizations via
+   **Settings → Enterprise → Connections → Server catalog**, shown below.
+   Either way, enter:
+   - **Transport**: HTTP (Streamable HTTP; this server does not support stdio)
+   - **URL**: `https://<your-host>/mcp`
+   - **Authentication / custom headers**:
+     `Authorization: Bearer <MCP_AUTH_TOKEN>` (values are write-only —
+     re-enter every header when changing them)
+   - Leave **Enable in sessions** on, and (enterprise catalog only) pick
+     which organizations receive the server under **Targeting**.
+
+   ![Devin enterprise MCP server configuration page](docs/devin-mcp-setup.png)
+4. **Verify.** Ask Devin to list the Bugzilla tools or run a quick
+   `search_bugs` call. All 15 tools (search/create/update bugs, comments,
+   attachments, history, custom fields) should be available.
+5. **Optional — webhooks.** Open `https://<your-host>/settings`, enter the
+   same `MCP_AUTH_TOKEN`, set the polling interval and a webhook URL to have
+   the server push `bug.created` / `bug.changed` events (for example, to an
+   endpoint that triggers a Devin session for each new bug).
+
+Notes:
+- One server instance = one Bugzilla identity. If different callers need
+  different permissions, run one instance per API key.
+- Never commit `.env`; store the API key and token as secrets.
