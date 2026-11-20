@@ -90,7 +90,9 @@ tick (node-cron, UTC) or POST /cron/run or the settings page "Run now"
   unfetched tail is still reported as created later.
 - **At-least-once delivery.** If any delivery fails after its retries, the
   watermark stays put and the same bugs are sent again on the next run.
-  Receivers should dedupe by bug `id`.
+  A bug is also sent again (as `bug.changed`) each time its
+  `last_change_time` moves, so receivers should dedupe on bug `id` plus
+  `last_change_time`, not on `id` alone.
 - **Persistence.** The watermark is saved to `STATE_FILE`, so a restart
   resumes from the last successful run. A failed save is logged, but the run
   still counts as successful.

@@ -170,7 +170,7 @@ The last-run watermark is persisted in `STATE_FILE`, so a restart does not skip
 bugs filed while the server was down. The watermark only advances after webhook
 delivery succeeds (or when no webhook is configured), so failed deliveries are
 retried on the next run (at-least-once semantics — receivers should dedupe by
-bug `id`).
+bug `id` plus `last_change_time`, since a bug is resent whenever it changes).
 
 ## Webhook
 
