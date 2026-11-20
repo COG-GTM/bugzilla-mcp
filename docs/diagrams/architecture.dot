@@ -1,0 +1,63 @@
+// bugzilla-mcp architecture. Edit this file, then run docs/diagrams/render.sh.
+digraph bugzilla_mcp {
+  graph [rankdir=TB, fontname="DejaVu Sans", fontsize=18, nodesep=0.5, ranksep=0.6,
+         labelloc=t, label="bugzilla-mcp architecture (src/)", pad=0.3, newrank=true];
+  node  [shape=box, style="rounded,filled", fillcolor=white, fontname="DejaVu Sans", fontsize=16, margin="0.2,0.1"];
+  edge  [fontname="DejaVu Sans", fontsize=13, color="#555555"];
+
+  mcp_client [label="MCP client\n(Devin, IDE agent, ...)", fillcolor="#e8f0fe"];
+  browser    [label="Browser\n(operator)", fillcolor="#e8f0fe"];
+  {rank=same; mcp_client; browser}
+
+  subgraph cluster_server {
+    label="Node.js process: dist/index.js (Express, PORT 3000)";
+    style="rounded,filled"; fillcolor="#f6f8fa"; color="#888888"; fontsize=16;
+
+    auth [label="requireAuth\nBearer MCP_AUTH_TOKEN\n(timing-safe compare)", fillcolor="#fff4e5"];
+
+    mcp_route  [label="POST /mcp\nstateless McpServer +\nStreamableHTTPServerTransport\nper request"];
+    tools      [label="tools.ts\n15 strict zod tools\n(bugs, comments, attachments,\nproducts, components, fields)"];
+    ops_routes [label="GET /health (no auth)\nGET /cron/status\nPOST /cron/run"];
+    settings   [label="settings.ts\nGET /settings (static HTML)\nGET|PUT /settings/config\nPOST /settings/test-webhook"];
+    {rank=same; mcp_route; ops_routes; settings}
+
+    config  [label="config.ts\nloadConfig() from env", fillcolor="#eef7ee"];
+    cron    [label="cron.ts BugzillaCron\nnode-cron, UTC schedule\nversion ping + poll,\nwatermark, single in-flight run"];
+    webhook [label="webhook.ts WebhookSender\nbatched JSON POST,\nHMAC-SHA256 signature,\nretries 1s / 5s / 25s"];
+    client  [label="bugzilla.ts BugzillaClient\nfetch {base}/rest/...\nX-BUGZILLA-API-KEY header\nor api_key query param"];
+    state   [label="state.ts StateStore\nload / save (write tmp + rename,\nmode 0600)"];
+    {rank=same; cron; webhook}
+  }
+
+  env       [label=".env / process env\nBUGZILLA_*, MCP_AUTH_TOKEN,\nCRON_SCHEDULE, WEBHOOK_*,\nSTATE_FILE, PORT", shape=note, fillcolor="#eef7ee"];
+  statefile [label="STATE_FILE JSON\nlastRunTime, creationCutoffTime,\ncronSchedule, webhookUrl,\nwebhookSecret, webhookEnabled", shape=cylinder, fillcolor="#fdf2f8"];
+  bugzilla  [label="Bugzilla 5.x REST API\n/rest/bug, /rest/product,\n/rest/component, /rest/field,\n/rest/version", fillcolor="#e8f0fe"];
+  receiver  [label="Webhook receiver\n(WEBHOOK_URL)", fillcolor="#e8f0fe"];
+  {rank=same; bugzilla; statefile; receiver}
+
+  mcp_client -> auth [label="JSON-RPC over HTTP"];
+  browser    -> settings [label="load page,\nthen fetch() with Bearer token"];
+  auth -> mcp_route;
+  auth -> ops_routes;
+  auth -> settings [label="JSON API\n(writes need token set)", style=dashed];
+
+  mcp_route -> tools;
+  tools -> client;
+  ops_routes -> cron [label="status / run()"];
+  settings -> cron [label="setSchedule()\nrun()"];
+  settings -> webhook [label="configure()\nsend(webhook.test)"];
+  settings -> state [label="save overrides"];
+
+  env -> config;
+  config -> client [style=dotted, label="base URL, key, auth style"];
+  config -> cron [style=dotted];
+  config -> webhook [style=dotted];
+
+  cron -> client [label="GET /version\nGET /bug?last_change_time"];
+  cron -> webhook [label="bug.created /\nbug.changed"];
+  cron -> state [label="save watermark\n(after delivery ok)"];
+
+  client -> bugzilla [label="HTTPS"];
+  webhook -> receiver [label="POST + X-Webhook-Signature"];
+  state -> statefile [dir=both];
+}

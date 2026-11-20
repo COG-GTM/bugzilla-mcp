@@ -5,6 +5,12 @@ served over Express with a built-in cron job that pings Bugzilla on a schedule.
 
 Targets the [Bugzilla 5.2 REST API](https://bugzilla.readthedocs.io/en/5.2/api/index.html).
 
+For how the pieces fit together (MCP server, Bugzilla client, cron, webhook,
+settings page and state), see [docs/architecture.md](docs/architecture.md) and
+its diagram ([PNG](docs/diagrams/architecture.png),
+[SVG](docs/diagrams/architecture.svg), editable
+[DOT source](docs/diagrams/architecture.dot)).
+
 ## Features
 
 - **MCP over Streamable HTTP** at `POST /mcp` (stateless; works with any MCP client)
@@ -164,7 +170,7 @@ The last-run watermark is persisted in `STATE_FILE`, so a restart does not skip
 bugs filed while the server was down. The watermark only advances after webhook
 delivery succeeds (or when no webhook is configured), so failed deliveries are
 retried on the next run (at-least-once semantics — receivers should dedupe by
-bug `id`).
+bug `id` plus `last_change_time`, since a bug is resent whenever it changes).
 
 ## Webhook
 
