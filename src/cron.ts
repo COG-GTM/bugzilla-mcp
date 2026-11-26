@@ -148,18 +148,23 @@ export class BugzillaCron {
     const ranAt = new Date().toISOString();
     console.log(`[cron] pinging Bugzilla at ${ranAt}`);
     try {
-      const version = (await this.client.version()) as VersionResponse;
+      // The version ping and the bug search are independent, so start both
+      // at once; awaiting the ping first keeps its error taking precedence.
+      const versionRequest = this.client.version() as Promise<VersionResponse>;
+      const searchRequest = this.lastRunTime
+        ? this.searchBugs({ last_change_time: this.lastRunTime.toISOString() })
+        : null;
+      searchRequest?.catch(() => {});
+      const version = await versionRequest;
       const result: CronRunResult = {
         ranAt,
         ok: true,
         bugzillaVersion: version.version,
       };
       let deliveryOk = true;
-      if (this.lastRunTime) {
+      if (this.lastRunTime && searchRequest) {
         const sinceMs = (this.creationCutoff ?? this.lastRunTime).getTime();
-        const { bugs, truncated } = await this.searchBugs({
-          last_change_time: this.lastRunTime.toISOString(),
-        });
+        const { bugs, truncated } = await searchRequest;
         const newBugs = bugs.filter(
           (bug) => bug.creation_time && new Date(bug.creation_time).getTime() >= sinceMs,
         );
