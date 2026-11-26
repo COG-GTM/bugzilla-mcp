@@ -112,7 +112,10 @@ export class BugzillaCron {
     return this.inFlight;
   }
 
-  private async searchBugs(params: Record<string, unknown>): Promise<{
+  private async searchBugs(
+    params: Record<string, unknown>,
+    shouldStop: () => boolean = () => false,
+  ): Promise<{
     bugs: WebhookBug[];
     truncated: boolean;
   }> {
@@ -122,6 +125,7 @@ export class BugzillaCron {
     let truncated = false;
     let offset = 0;
     for (;;) {
+      if (shouldStop()) break;
       const search = (await this.client.get("/bug", {
         ...params,
         include_fields: "id,summary,status,creation_time,last_change_time",
@@ -147,19 +151,30 @@ export class BugzillaCron {
   private async doRun(): Promise<CronRunResult> {
     const ranAt = new Date().toISOString();
     console.log(`[cron] pinging Bugzilla at ${ranAt}`);
+    // The version ping and the bug search are independent, so start both at
+    // once; awaiting the ping first keeps its error taking precedence. A
+    // failed run stops the search paging and waits for it to settle, so the
+    // search never outlives `inFlight`.
+    let searchRequest: ReturnType<BugzillaCron["searchBugs"]> | null = null;
+    let stopSearch = false;
     try {
-      const version = (await this.client.version()) as VersionResponse;
+      const versionRequest = this.client.version() as Promise<VersionResponse>;
+      const since = this.lastRunTime;
+      searchRequest = since
+        ? (async () =>
+            this.searchBugs({ last_change_time: since.toISOString() }, () => stopSearch))()
+        : null;
+      searchRequest?.catch(() => {});
+      const version = await versionRequest;
       const result: CronRunResult = {
         ranAt,
         ok: true,
         bugzillaVersion: version.version,
       };
       let deliveryOk = true;
-      if (this.lastRunTime) {
+      if (this.lastRunTime && searchRequest) {
         const sinceMs = (this.creationCutoff ?? this.lastRunTime).getTime();
-        const { bugs, truncated } = await this.searchBugs({
-          last_change_time: this.lastRunTime.toISOString(),
-        });
+        const { bugs, truncated } = await searchRequest;
         const newBugs = bugs.filter(
           (bug) => bug.creation_time && new Date(bug.creation_time).getTime() >= sinceMs,
         );
@@ -210,6 +225,8 @@ export class BugzillaCron {
       }
       return result;
     } catch (err) {
+      stopSearch = true;
+      await searchRequest?.catch(() => {});
       const result: CronRunResult = {
         ranAt,
         ok: false,
