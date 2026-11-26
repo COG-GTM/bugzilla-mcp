@@ -107,3 +107,71 @@ test("a failed version ping waits for the in-flight search before the run ends",
   assert.equal(result.ok, false);
   assert.equal(result.error, "version down");
 });
+
+test("a failed version ping stops the search after its current page", async () => {
+  let releasePage!: () => void;
+  const pageGate = new Promise<void>((resolve) => (releasePage = resolve));
+  const fullPage = Array.from({ length: 100 }, (_, i) => ({
+    id: i + 1,
+    summary: "s",
+    status: "NEW",
+    creation_time: "2026-02-01T00:00:00Z",
+  }));
+  const client = new FakeClient(
+    async () => {
+      throw new Error("version down");
+    },
+    async () => {
+      await pageGate;
+      return { bugs: fullPage };
+    },
+  );
+  const run = makeCron(client).run();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  releasePage();
+  const result = await run;
+  assert.equal(result.error, "version down");
+  assert.deepEqual(client.calls, ["version", "get /bug"]);
+});
+
+test("a malformed version response keeps the run in flight until the search settles", async () => {
+  let releaseSearch!: () => void;
+  const searchGate = new Promise<void>((resolve) => (releaseSearch = resolve));
+  const client = new FakeClient(
+    async () => null,
+    async () => {
+      await searchGate;
+      return { bugs: [] };
+    },
+  );
+  const cron = makeCron(client);
+  const run = cron.run();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(cron.run(), run, "run should still be in flight while the search is pending");
+  releaseSearch();
+  const result = await run;
+  assert.equal(result.ok, false);
+});
+
+test("an invalid in-memory watermark with a failed ping reports the ping error", async () => {
+  const unhandled: unknown[] = [];
+  const onUnhandled = (reason: unknown) => unhandled.push(reason);
+  process.on("unhandledRejection", onUnhandled);
+  try {
+    const client = new FakeClient(
+      async () => {
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        throw new Error("version down");
+      },
+      async () => ({ bugs: [] }),
+    );
+    const cron = makeCron(client);
+    (cron as unknown as { lastRunTime: Date }).lastRunTime = new Date("not a date");
+    const result = await cron.run();
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.equal(result.error, "version down");
+    assert.deepEqual(unhandled, []);
+  } finally {
+    process.off("unhandledRejection", onUnhandled);
+  }
+});

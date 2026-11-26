@@ -112,7 +112,10 @@ export class BugzillaCron {
     return this.inFlight;
   }
 
-  private async searchBugs(params: Record<string, unknown>): Promise<{
+  private async searchBugs(
+    params: Record<string, unknown>,
+    shouldStop: () => boolean = () => false,
+  ): Promise<{
     bugs: WebhookBug[];
     truncated: boolean;
   }> {
@@ -122,6 +125,7 @@ export class BugzillaCron {
     let truncated = false;
     let offset = 0;
     for (;;) {
+      if (shouldStop()) break;
       const search = (await this.client.get("/bug", {
         ...params,
         include_fields: "id,summary,status,creation_time,last_change_time",
@@ -147,19 +151,21 @@ export class BugzillaCron {
   private async doRun(): Promise<CronRunResult> {
     const ranAt = new Date().toISOString();
     console.log(`[cron] pinging Bugzilla at ${ranAt}`);
+    // The version ping and the bug search are independent, so start both at
+    // once; awaiting the ping first keeps its error taking precedence. A
+    // failed run stops the search paging and waits for it to settle, so the
+    // search never outlives `inFlight`.
+    let searchRequest: ReturnType<BugzillaCron["searchBugs"]> | null = null;
+    let stopSearch = false;
     try {
-      // The version ping and the bug search are independent, so start both
-      // at once. The ping's error still takes precedence, and a failed run
-      // waits for the search to settle so it never outlives `inFlight`.
       const versionRequest = this.client.version() as Promise<VersionResponse>;
-      const searchRequest = this.lastRunTime
-        ? this.searchBugs({ last_change_time: this.lastRunTime.toISOString() })
+      const since = this.lastRunTime;
+      searchRequest = since
+        ? (async () =>
+            this.searchBugs({ last_change_time: since.toISOString() }, () => stopSearch))()
         : null;
       searchRequest?.catch(() => {});
-      const version = await versionRequest.catch(async (err: unknown) => {
-        await searchRequest?.catch(() => {});
-        throw err;
-      });
+      const version = await versionRequest;
       const result: CronRunResult = {
         ranAt,
         ok: true,
@@ -219,6 +225,8 @@ export class BugzillaCron {
       }
       return result;
     } catch (err) {
+      stopSearch = true;
+      await searchRequest?.catch(() => {});
       const result: CronRunResult = {
         ranAt,
         ok: false,
