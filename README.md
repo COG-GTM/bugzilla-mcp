@@ -153,10 +153,13 @@ Docker image); use `start:local` or `dev` to load a local `.env` file.
 
 At each scheduled tick the job:
 
-1. Calls `GET /rest/version` as a health check.
-2. Polls `GET /rest/bug?last_change_time=<lastRun>` for bugs touched since the
-   previous run (skipped on the first run since there is no baseline) and splits
-   them into new bugs (`creation_time` ≥ last run) and changed bugs.
+1. Calls `GET /rest/version` as a health check and, at the same time, polls
+   `GET /rest/bug?last_change_time=<lastRun>` for bugs touched since the
+   previous run (skipped on the first run since there is no baseline). If the
+   health check fails, the run fails with its error, the poll fetches no further
+   pages and its results are discarded.
+2. Splits the polled bugs into new bugs (`creation_time` ≥ last run) and
+   changed bugs.
 3. Delivers webhook events (see below) when a webhook URL is configured.
 4. Logs results and stores the last result in memory, visible at `GET /cron/status`.
 
