@@ -149,13 +149,17 @@ export class BugzillaCron {
     console.log(`[cron] pinging Bugzilla at ${ranAt}`);
     try {
       // The version ping and the bug search are independent, so start both
-      // at once; awaiting the ping first keeps its error taking precedence.
+      // at once. The ping's error still takes precedence, and a failed run
+      // waits for the search to settle so it never outlives `inFlight`.
       const versionRequest = this.client.version() as Promise<VersionResponse>;
       const searchRequest = this.lastRunTime
         ? this.searchBugs({ last_change_time: this.lastRunTime.toISOString() })
         : null;
       searchRequest?.catch(() => {});
-      const version = await versionRequest;
+      const version = await versionRequest.catch(async (err: unknown) => {
+        await searchRequest?.catch(() => {});
+        throw err;
+      });
       const result: CronRunResult = {
         ranAt,
         ok: true,

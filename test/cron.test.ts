@@ -82,3 +82,28 @@ test("cron reports the search error when only the search fails", async () => {
   assert.equal(result.ok, false);
   assert.equal(result.error, "search down");
 });
+
+test("a failed version ping waits for the in-flight search before the run ends", async () => {
+  let releaseSearch!: () => void;
+  const searchGate = new Promise<void>((resolve) => (releaseSearch = resolve));
+  let searchDone = false;
+  const client = new FakeClient(
+    async () => {
+      throw new Error("version down");
+    },
+    async () => {
+      await searchGate;
+      searchDone = true;
+      return { bugs: [] };
+    },
+  );
+  const cron = makeCron(client);
+  const run = cron.run();
+  await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.equal(cron.run(), run, "run should still be in flight while the search is pending");
+  releaseSearch();
+  const result = await run;
+  assert.equal(searchDone, true);
+  assert.equal(result.ok, false);
+  assert.equal(result.error, "version down");
+});
